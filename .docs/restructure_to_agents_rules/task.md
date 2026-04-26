@@ -1,5 +1,0 @@
-- [x] `.agents/rules/` ディレクトリの作成
-- [x] ルールファイルの移動 (`global_rules.md`, `code_style_guide.md`)
-- [x] `README.md` の内容更新
-- [x] (オプション) AI自動認識の確認
-- [x] 完了報告とドキュメントの移動

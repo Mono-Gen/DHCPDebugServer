@@ -16,3 +16,6 @@ Desktop.ini
 # Temporary files
 *.tmp
 *.log
+
+# Documentation & Internal Tasks (Local only)
+.docs/
