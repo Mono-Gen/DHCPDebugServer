@@ -1,4 +1,4 @@
-# DHCPDebugServer Manual (English)
+# DHCPDebugServer Manual v1.0.0 (English)
 
 ## Overview
 A DHCP server with specialized debugging features for testing DHCP client implementations and network troubleshooting.

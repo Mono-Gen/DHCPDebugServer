@@ -35,7 +35,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("DHCPDebugServer (v4 Final)")
+        self.title("DHCPDebugServer (v1.0.0)")
         self.geometry("1100x850")
 
         self.server: Optional[DHCPServer] = None
