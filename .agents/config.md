@@ -5,6 +5,8 @@ AIはここにリストアップ（有効化）されたルールを最優先で
 
 ## 有効なルール
 - .agents/rules/global_rules.md
+- .agents/rules/code_style_guide.md
+- .agents/rules/documentation_rules.md
 
 <!--
 適用したいルールの行をこのコメントタグの外に移動させてください。

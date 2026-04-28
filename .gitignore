@@ -1,21 +1,25 @@
-# OS files
-Thumbs.db
-db.
-Desktop.ini
-.DS_Store
-.AppleDouble
-.LSOverride
+# Standard Python ignores
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
 
-# IDEs and Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Temporary files
-*.tmp
-*.log
-
-# Documentation & Internal Tasks (Local only)
+# Project specific rules (global_rules.md)
 .docs/
+.agents/
+tasks/
+archives/
+tests/
+release_*/
+*.zip
+app_icon.ico
+DHCPDebugServer_v1.0.0.spec
+
+# Hide .gitignore from GitHub as per user policy
+.gitignore
+
+# Build artifacts
+build/
+dist/
+*.spec
