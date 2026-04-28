@@ -1,4 +1,4 @@
-# DHCP Debug Server
+# DHCP Debug Server v1.1.0
 
 A robust, standalone DHCP server designed for network troubleshooting and debugging DHCP client implementations.
 

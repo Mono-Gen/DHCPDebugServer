@@ -4,13 +4,15 @@ DHCP Debug Server GUI Application
 Built with CustomTkinter. 
 This module provides a graphical interface to configure, monitor, and 
 manipulate the DHCP server behavior for debugging purposes.
+
+It follows the project's UI/UX and documentation rules.
 """
 
 import customtkinter as ctk
 import time
 import threading
 import socket
-from typing import Optional, List, Set, Dict, Any
+from typing import Optional, List, Set, Dict, Any, Tuple
 from dhcp_server import (
     DHCPServer, DHCPPacket,
     DHCP_MSG_DISCOVER, DHCP_MSG_OFFER, DHCP_MSG_REQUEST, 
@@ -18,6 +20,12 @@ from dhcp_server import (
     DHCP_MSG_RELEASE, DHCP_MSG_INFORM
 )
 from utils import get_network_interfaces
+
+# --- UI Aesthetics (UI/UX Rule 2) ---
+COLOR_CONFIRMED = "#55ff55" # Green: Active / Normal / ON / Confirmed
+COLOR_ERROR     = "#ff5555" # Red: Error / Offline / Dangerous
+COLOR_PENDING   = "#ffff55" # Yellow: Warning / Pending / Transition
+COLOR_OFFLINE   = "#888888" # Gray: Offline / Unconfirmed / Disabled
 
 # Appearance settings
 ctk.set_appearance_mode("dark")
@@ -28,33 +36,40 @@ class App(ctk.CTk):
     Main Application Window class.
     
     Responsibilities:
-    - Manage UI lifecycle and components.
+    - Manage UI lifecycle and component initialization.
     - Synchronize UI state with the background DHCPServer instance.
-    - Format and display logs and lease status.
+    - Format and display real-time traffic logs and IP lease status.
+    - Handle user interactions and configuration validation.
+
+    Out of Scope:
+    - Low-level DHCP protocol logic (handled by DHCPPacket/DHCPServer).
+    - Direct network socket operations.
     """
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initializes the main application window and its components."""
         super().__init__()
 
-        self.title("DHCPDebugServer (v1.0.0)")
+        self.title("DHCPDebugServer (v1.1.0)")
         self.geometry("1100x850")
 
         self.server: Optional[DHCPServer] = None
         self.interfaces: List[Dict[str, str]] = []
         self.saved_mac_filters: Set[str] = set()
-        self.all_logs: List[tuple[str, str]] = [] # (timestamp, message)
+        self.all_logs: List[Tuple[str, str]] = [] # (timestamp, message)
 
-        # Grid layout (1x2)
+        # Grid layout (1x2: Sidebar and Content)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # --- Sidebar (Scrollable) ---
+        # --- Sidebar (Configuration & Control) ---
         self.sidebar = ctk.CTkScrollableFrame(self, width=300, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         
         self.logo_label = ctk.CTkLabel(self.sidebar, text="DHCP Server", font=ctk.CTkFont(size=24, weight="bold"))
         self.logo_label.pack(padx=20, pady=(20, 10))
 
-        self.status_label = ctk.CTkLabel(self.sidebar, text="● Stopped", text_color="#ff5555", font=ctk.CTkFont(weight="bold"))
+        # Status Indicator (UI/UX Rule 1)
+        self.status_label = ctk.CTkLabel(self.sidebar, text="● Offline", text_color=COLOR_OFFLINE, font=ctk.CTkFont(weight="bold"))
         self.status_label.pack(pady=5)
 
         # NIC Selection with Refresh
@@ -126,7 +141,16 @@ class App(ctk.CTk):
         
         self.log_filter_var = ctk.StringVar()
         self.log_filter_var.trace_add("write", lambda *args: self.refresh_log())
-        self.log_filter_entry = ctk.CTkEntry(self.log_ctrl_frame, placeholder_text="Display Filter (e.g. 08:0d:d2 && ACK || DISCOVER)", textvariable=self.log_filter_var)
+        
+        # Explicit label for filter operators (visibility improvement)
+        self.log_filter_label = ctk.CTkLabel(self.log_ctrl_frame, text="Filter (&&, ||):", font=ctk.CTkFont(size=12, weight="bold"))
+        self.log_filter_label.pack(side="left", padx=(0, 5))
+
+        self.log_filter_entry = ctk.CTkEntry(
+            self.log_ctrl_frame, 
+            placeholder_text="e.g. ACK && 00:0f... || DISCOVER", 
+            textvariable=self.log_filter_var
+        )
         self.log_filter_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
         self.btn_clear_logs = ctk.CTkButton(self.log_ctrl_frame, text="Clear Logs", width=80, height=24, fg_color="#444444", command=self.clear_log)
@@ -180,11 +204,18 @@ class App(ctk.CTk):
         self.refresh_interfaces()
 
     def refresh_interfaces(self) -> None:
-        """Updates the network interface list in the dropdown menu."""
+        """
+        Updates the network interface list in the sidebar dropdown.
+        
+        Fetches current NICs from the OS and populates the UI menu.
+        """
         try:
             self.interfaces = get_network_interfaces()
+            # Format: 'Interface Name (IP Address)'
             vals = [f"{i['name']} ({i['ip']})" for i in self.interfaces]
             self.nic_menu.configure(values=vals)
+            
+            # Auto-select the first interface if nothing is selected.
             if vals and not self.nic_var.get():
                 self.nic_menu.set(vals[0])
                 self.nic_var.set(vals[0].split("(")[-1].strip(")"))
@@ -193,22 +224,27 @@ class App(ctk.CTk):
             self.add_log(f"NIC Retrieval Error: {e}")
 
     def on_nic_change_ev(self, val: str) -> None:
-        """Handles the selection change in the NIC dropdown and updates related fields."""
+        """
+        Handles selection changes in the NIC dropdown and suggests network settings.
+        
+        Args:
+            val (str): The selected item from the OptionMenu.
+        """
         ip = val.split("(")[-1].strip(")")
         self.nic_var.set(ip)
         
-        # Find matching interface data to update mask and suggestions
+        # Search for interface metadata to suggest appropriate subnet mask and defaults.
         iface = next((i for i in self.interfaces if i['ip'] == ip), None)
         if iface:
             # Update Mask
             self.entry_mask.delete(0, "end")
             self.entry_mask.insert(0, iface['mask'])
             
-            # Suggest Router (usually the interface itself for simple setups)
+            # Suggest Router (usually the interface IP itself for simple debugging setups)
             self.entry_router.delete(0, "end")
             self.entry_router.insert(0, ip)
             
-            # Suggest Pool Start/End (very crude, just for convenience)
+            # Suggest Pool Start/End (.100 to .150 on the same C-class subnet)
             try:
                 base = ".".join(ip.split(".")[:3]) + "."
                 self.entry_start.delete(0, "end")
@@ -216,17 +252,27 @@ class App(ctk.CTk):
                 self.entry_end.delete(0, "end")
                 self.entry_end.insert(0, f"{base}150")
             except Exception:
+                # Ignore failures in suggestion logic.
                 pass
 
     def _match_filter(self, msg: str) -> bool:
-        """Evaluates if the message matches the filter string using Wireshark-style &&/|| logic."""
+        """
+        Evaluates if a log message matches the current UI display filter.
+        
+        Supports Wireshark-style logical operators (&&, ||).
+        
+        Args:
+            msg (str): The log message string.
+            
+        Returns:
+            bool: True if it matches the filter, False otherwise.
+        """
         f_text = self.log_filter_var.get().lower().strip()
         if not f_text:
             return True
         
         msg_l = msg.lower()
-        # Logic: OR groups (||) composed of AND requirements (&&)
-        # Matches if ANY OR-group is fully satisfied.
+        # Evaluate OR groups first, then AND requirements within them.
         or_groups = f_text.split("||")
         for group in or_groups:
             and_requirements = [req.strip() for req in group.split("&&") if req.strip()]
@@ -237,17 +283,26 @@ class App(ctk.CTk):
         return False
 
     def add_log(self, msg: str) -> None:
-        """Appends a message to the internal history and optionally the log window."""
+        """
+        Appends a message to the internal history and logs it to the UI if it matches filters.
+        
+        Args:
+            msg (str): Message to log.
+        """
         timestamp = time.strftime("%H:%M:%S")
         self.all_logs.append((timestamp, msg))
         
-        # Apply filter in real-time
+        # Limit history size to prevent memory leaks (Resource Management Rule 2).
+        if len(self.all_logs) > 5000:
+            self.all_logs.pop(0)
+        
+        # Apply filter in real-time for UI performance.
         if self._match_filter(msg):
             self.log_text.insert("end", f"[{timestamp}] {msg}\n")
             self.log_text.see("end")
 
     def refresh_log(self) -> None:
-        """Clears and re-renders the log window based on current filter."""
+        """Clears and re-renders the log window based on the current filter."""
         self.log_text.delete("1.0", "end")
         for timestamp, msg in self.all_logs:
             if self._match_filter(msg):
@@ -255,19 +310,24 @@ class App(ctk.CTk):
         self.log_text.see("end")
 
     def clear_log(self) -> None:
-        """Clears both internal history and the communication log window."""
+        """Clears both internal history and the UI log window."""
         self.all_logs.clear()
         self.log_text.delete("1.0", "end")
         self.add_log("Log history cleared.")
 
     def update_leases(self) -> None:
-        """Updates the lease table in the Dashboard tab."""
+        """
+        Updates the IP lease table in the Dashboard tab.
+        
+        Reflects the current state of the DHCPServer's lease database.
+        """
         self.lease_list.delete("1.0", "end")
         self.lease_list.insert("1.0", f"{'IP Address':<20} {'MAC Address':<20} {'Remaining'}\n")
         self.lease_list.insert("end", "-"*60 + "\n")
         
         if not self.server: 
             return
+            
         now = time.time()
         for mac, data in self.server.leases.items():
             remaining = int(data['expiry'] - now)
@@ -275,8 +335,13 @@ class App(ctk.CTk):
 
     def on_packet(self, pkt: DHCPPacket, addr: tuple) -> None:
         """
-        Callback triggered by the DHCP server for each processed packet.
-        Updates the UI log with packet details.
+        Callback triggered by the DHCPServer for each processed packet.
+        
+        Synchronizes packet details with the UI log.
+        
+        Args:
+            pkt (DHCPPacket): The parsed DHCP packet.
+            addr (tuple): Source address (IP, Port).
         """
         msg_types = {
             DHCP_MSG_DISCOVER: "DISCOVER",
@@ -288,43 +353,55 @@ class App(ctk.CTk):
             DHCP_MSG_RELEASE: "RELEASE",
             DHCP_MSG_INFORM: "INFORM"
         }
-        mtype = pkt.options.get(53, b'\x00')[0]
+        
+        mtype_data = pkt.options.get(53, b'\x00')
+        mtype = mtype_data[0]
         type_name = msg_types.get(mtype, "UNKNOWN")
+        
         info = f"Recv {type_name} from {pkt.chaddr.hex(':')} (XID: {hex(pkt.xid)})"
         
-        # UI updates must happen in the main thread
+        # Schedule UI updates on the main thread (UI/UX Rule 3).
         self.after(0, lambda: self.add_log(info))
         self.after(0, self.update_leases)
 
-
     def clear_leases(self) -> None:
-        """Resets active lease information on the server and UI."""
+        """Resets active lease data on the server and clears the UI table."""
         if self.server:
             self.server.leases = {}
         self.update_leases()
         self.add_log("Lease data reset.")
 
     def toggle_server(self) -> None:
-        """Starts or stops the DHCP server based on current state."""
+        """
+        Starts or stops the DHCP server.
+        
+        Handles UI state transitions and error reporting.
+        """
         if self.server and self.server.running:
+            # Transition to Offline
             self.server.stop()
             self.server = None
             self.btn_toggle.configure(text="Start Server", fg_color="#1f538d")
-            self.status_label.configure(text="● Stopped", text_color="#ff5555")
+            self.status_label.configure(text="● Offline", text_color=COLOR_OFFLINE)
             self.add_log("Server stopped.")
         else:
             try:
+                # Transition to Pending (UI/UX Rule 1)
+                self.status_label.configure(text="● Pending", text_color=COLOR_PENDING)
+                self.update_idletasks() # Ensure the label update is visible immediately.
+                
                 ip = self.nic_var.get()
                 if not ip: 
                     raise ValueError("Please select a network interface.")
                 
-                # Dynamic configuration from URI entries
+                # Dynamic configuration from entry fields
                 lease_time = int(self.entry_lease.get())
                 if lease_time <= 0: 
                     raise ValueError("Lease time must be a positive integer.")
 
                 gw = self.entry_router.get()
                 if gw == "0.0.0.0" or not gw: 
+                    # Default gateway suggestion
                     gw = ip 
 
                 cfg = {
@@ -339,25 +416,33 @@ class App(ctk.CTk):
                 
                 self.server = DHCPServer(cfg)
                 self.server.on_packet = self.on_packet
-                # Direct server logs to the UI log window
-                self.server.on_status = lambda msg: self.after(0, lambda: self.add_log(f"Status: {msg}"))
+                self.server.on_status = lambda msg: self.after(0, lambda: self.add_log(f"Server Status: {msg}"))
                 
-                # Apply current UI states to the server instance
+                # Apply debug settings before starting
                 self.update_debug() 
                 self.apply_mac_filter()
                 
                 self.server.start()
                 
+                # Transition to Confirmed/Active
                 self.btn_toggle.configure(text="Stop Server", fg_color="#8d1f1f")
-                self.status_label.configure(text="● Running", text_color="#55ff55")
-                self.add_log(f"Server started on {ip}:67")
+                self.status_label.configure(text="● Active", text_color=COLOR_CONFIRMED)
+                self.add_log(f"Server successfully started on {ip}:67")
+                
             except ValueError as ve:
-                self.add_log(f"Config Error: {ve}")
+                self.status_label.configure(text="● Error", text_color=COLOR_ERROR)
+                self.add_log(f"Configuration Error: {ve}")
             except Exception as e:
-                self.add_log(f"Startup Failure: {e}")
+                self.status_label.configure(text="● Error", text_color=COLOR_ERROR)
+                self.add_log(f"Critical Startup Failure: {e}")
 
     def update_debug(self, val: Any = None) -> None:
-        """Synchronizes debug tab settings to the running server."""
+        """
+        Synchronizes debug tab switch/slider settings to the running server instance.
+        
+        Args:
+            val (Any): Ignored. Used for event callbacks.
+        """
         d_val = int(self.delay_slider.get())
         self.delay_label.configure(text=f"Response Delay (ms): {d_val}")
 
@@ -369,13 +454,14 @@ class App(ctk.CTk):
         self.server.nak_mode = self.nak_mode.get()
         self.server.ignored_types = {k for k, v in self.filter_vars.items() if v.get()}
         self.server.delay_ms = d_val
-        self.add_log(f"Debug updated: Drop={self.server.drop_all}, Delay={d_val}ms")
+        self.add_log(f"Debug settings updated (Delay: {d_val}ms)")
 
     def apply_mac_filter(self) -> None:
-        """Parses the MAC filter textbox and applies it to the server."""
+        """Parses the MAC filter textbox and applies the resulting list to the server."""
         raw_text = self.mac_filter_text.get("1.0", "end").strip()
         mac_list: List[str] = []
         for line in raw_text.split("\n"):
+            # Standardize MAC format to lower case with colon separators.
             m = line.strip().lower().replace("-", ":")
             if m: 
                 mac_list.append(m)
@@ -383,9 +469,9 @@ class App(ctk.CTk):
         
         if self.server:
             self.server.mac_filters = self.saved_mac_filters
-            self.add_log(f"MAC filter applied: {len(self.saved_mac_filters)} entries")
+            self.add_log(f"MAC filter applied ({len(self.saved_mac_filters)} entries)")
         else:
-            self.add_log(f"MAC filter saved (will apply on startup): {len(self.saved_mac_filters)} entries")
+            self.add_log(f"MAC filter saved (will apply on server start)")
 
 if __name__ == "__main__":
     app = App()

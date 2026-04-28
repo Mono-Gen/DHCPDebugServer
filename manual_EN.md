@@ -1,4 +1,4 @@
-# DHCPDebugServer Manual v1.0.0 (English)
+# DHCPDebugServer Manual v1.1.0 (English)
 
 ## Overview
 A DHCP server with specialized debugging features for testing DHCP client implementations and network troubleshooting.
@@ -15,7 +15,11 @@ A DHCP server with specialized debugging features for testing DHCP client implem
 - **Start Server**: Click to begin. If it fails, check for Administrator privileges and port 67 availability.
 
 ### 2. Dashboard
-- **Status**: Live indicator of server activity.
+- **Status**: Live indicator of server state (4 stages):
+    - ● **Active** (Green): Running normally. Listening and responding to requests.
+    - ● **Pending** (Yellow): Transitioning/Starting.
+    - ● **Error** (Red): Failed to start or encountered a critical error.
+    - ● **Offline** (Gray): Stopped. Resources are released.
 - **Active Leases**: Table showing assigned IP addresses, client MACs, and lease expiration.
 
 ### 3. Advanced Debugging (Debug Tab)
