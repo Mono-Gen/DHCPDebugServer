@@ -33,6 +33,14 @@ This project follows a professional AI-assisted development workflow.
 2. Install dependencies: `pip install -r requirements.txt`
 3. Run the application: `python main.py`
 
+### Building Standalone Executable
+
+To build the standalone Windows executable (`.exe`) with the custom icon:
+
+1. Ensure PyInstaller is installed: `pip install pyinstaller`
+2. Run the build command: `pyinstaller DHCPDebugServer_v1.0.0.spec`
+3. The executable will be generated in the `dist/` directory.
+
 ## License
 
 Refer to the repository for licensing information.
