@@ -34,7 +34,7 @@ Manuals are available in English ([manual_EN.md](manual_EN.md)) and Japanese ([m
 To build the standalone Windows executable (`.exe`) with the custom icon:
 
 1. Ensure PyInstaller is installed: `pip install pyinstaller`
-2. Run the build command: `pyinstaller DHCPDebugServer_v1.0.0.spec`
+2. Run the build command: `pyinstaller DHCPDebugServer_v1.1.1.spec`
 3. The executable will be generated in the `dist/` directory.
 
 ## License
